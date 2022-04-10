@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	tableName := "my-table2"
+	tableName := "my-table4"
 	ctx := context.TODO()
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithRegion("us-east-1"),
@@ -48,11 +48,19 @@ func main() {
 					AttributeName: aws.String("id"),
 					AttributeType: types.ScalarAttributeTypeS,
 				},
+				{
+					AttributeName: aws.String("date"),
+					AttributeType: types.ScalarAttributeTypeN,
+				},
 			},
 			KeySchema: []types.KeySchemaElement{
 				{
 					AttributeName: aws.String("id"),
 					KeyType:       types.KeyTypeHash,
+				},
+				{
+					AttributeName: aws.String("date"),
+					KeyType:       types.KeyTypeRange,
 				},
 			},
 			TableName:   aws.String(tableName),
@@ -70,30 +78,55 @@ func main() {
 	} else {
 		fmt.Println("table exists")
 	}
-	fmt.Println("put item")
-	_, err = db.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: &tableName,
-		Item: map[string]types.AttributeValue{
-			"id":    &types.AttributeValueMemberS{Value: "123"},
-			"name":  &types.AttributeValueMemberS{Value: "John"},
-			"email": &types.AttributeValueMemberS{Value: "john@a.com"},
-		},
-	})
-	if err != nil {
-		panic(err)
+
+	{
+		fmt.Println("put item")
+		_, err = db.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: &tableName,
+			Item: map[string]types.AttributeValue{
+				"id":    &types.AttributeValueMemberS{Value: "123"},
+				"date":  &types.AttributeValueMemberN{Value: "20220410"},
+				"name":  &types.AttributeValueMemberS{Value: "John"},
+				"email": &types.AttributeValueMemberS{Value: "john@a.com"},
+			},
+		})
+		if err != nil {
+			panic(err)
+		}
 	}
 
-	out, err := db.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: &tableName,
-		Key: map[string]types.AttributeValue{
-			"id": &types.AttributeValueMemberS{Value: "123"},
-		},
-	})
-	if err != nil {
-		panic(err)
+	{
+		out, err := db.GetItem(ctx, &dynamodb.GetItemInput{
+			TableName: &tableName,
+			Key: map[string]types.AttributeValue{
+				"id":   &types.AttributeValueMemberS{Value: "123"},
+				"date": &types.AttributeValueMemberN{Value: "20220410"},
+			},
+		})
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Printf("%v\n", out.Item["email"].(*types.AttributeValueMemberS).Value)
 	}
 
-	fmt.Printf("%v\n", out.Item["email"].(*types.AttributeValueMemberS).Value)
+	{
+		out, err := db.Query(context.TODO(), &dynamodb.QueryInput{
+			TableName:              &tableName,
+			KeyConditionExpression: aws.String("id = :hashKey and #date >= :rangeKey"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":hashKey":  &types.AttributeValueMemberS{Value: "123"},
+				":rangeKey": &types.AttributeValueMemberN{Value: "20220410"},
+			},
+			ExpressionAttributeNames: map[string]string{
+				"#date": "date",
+			},
+		})
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("%v\n", out.Items[0]["email"].(*types.AttributeValueMemberS).Value)
+	}
 }
 
 func existTable(ctx context.Context, db *dynamodb.Client, tn string) (bool, error) {
